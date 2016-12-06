@@ -38,33 +38,36 @@
     <script src="../assets/js/step5/FloatingChars.js" type="text/javascript"></script>
     <script src="../assets/js/step5/MainVisual.js" type="text/javascript"></script>
     <script src="../assets/js/step5/index.js" type="text/javascript"></script>
-    <script id="vertexShader" type="x-shader/x-vertex">
-uniform mat4 modelViewMatrix;
-uniform mat4 modelMatrix;
-uniform mat4 projectionMatrix;
-uniform float time;
-uniform vec3 cameraPosition;
-uniform float numChars;
-uniform float numTextureGridRows;
-uniform float numTextureGridCols;
-uniform float textureTxtLength;
+    <script id="vertexShader" type="x-shader/x-vertex">// three.jsが予め定義してるuniform変数
+uniform mat4 modelMatrix;  // モデル変換行列
+uniform mat4 viewMatrix;  // ビュー変換行列
+uniform mat4 projectionMatrix;  // プロジェクション変換行列
+uniform vec3 cameraPosition;  // カメラの位置
 
-uniform float animationValue1;
-uniform float animationValue2;
-uniform float animationValue3;
+// 自分で定義したuniform変数
+uniform float time;  // 経過時間
+uniform float numChars;  // 文字数 (正方形の数)
+uniform float numTextureGridRows;  // テクスチャの横方向の文字数
+uniform float numTextureGridCols;  // テクスチャの縦方向の文字数
+uniform float textureTxtLength;  // テクスチャに使っている文字の数
+uniform float animationValue1;  // アニメーション適用度1
+uniform float animationValue2;  // アニメーション適用度2
+uniform float animationValue3;  // アニメーション適用度3
 
-attribute vec3 position;
-attribute vec3 randomValues;
-attribute vec2 uv;
-attribute float charIndex;
+// FloatingCharsGeometryで追加したattribute
+attribute vec3 position;  // 座標
+attribute vec3 randomValues;  // ランダム値
+attribute vec2 uv;  //UV座標
+attribute float charIndex;  // 何番目の文字(正方形に)属するか
 
-varying vec4 vColor;
-varying vec2 vUv;
+// フラグメントシェーダに渡す値
+varying vec4 vColor;  // 文字色
+varying vec2 vUv;  // UV座標
 
+// 定数としてPIを定義
 const float PI = 3.1415926535897932384626433832795;
 
-const float radius = 60.0;
-
+// 3次元ベクトルを任意の軸で回転
 vec3 rotateVec3(vec3 p, float angle, vec3 axis){
   vec3 a = normalize(axis);
   float s = sin(angle);
@@ -84,6 +87,7 @@ vec3 rotateVec3(vec3 p, float angle, vec3 axis){
   return m * p;
 }
 
+// 範囲を設定し直す
 float map(float value, float inputMin, float inputMax, float outputMin, float outputMax, bool clamp) {
   if(clamp == true) {
     if(value < inputMin) return outputMin;
@@ -94,28 +98,37 @@ float map(float value, float inputMin, float inputMax, float outputMin, float ou
   return ((value - inputMin) * p) + outputMin;
 }
 
+// hsvの値をrgbに変換
 vec3 hsv2rgb(vec3 c) {
   vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
   vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
   return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
+// 距離から透明度を計算
 float getAlpha(float distance) {
   float da = abs(distance - 400.0) / 500.0;
   return clamp(1.0 - da, 0.0, 1.0);
 }
 
+// time, scale, offsetを使って角度を返す
+// 範囲は -PI ~ PI
 float getRad(float scale, float offset) {
   return map(mod(time * scale + offset, PI * 2.0), 0.0, PI * 2.0, -PI, PI, true);
 }
 
+
+// メインの処理
 void main() {
   vec3 pos = position;
   float theta;
 
+  // アニメーションの半径
+  float radius = 60.0;
 
   //
   // animation1
+  // ビルボード
   //
 
   pos -= animationValue1 * position;
@@ -130,6 +143,7 @@ void main() {
 
   //
   // animation2
+  // 8個のリング状
   //
 
   float numRings = 8.0;  // リングの個数
@@ -146,50 +160,78 @@ void main() {
 
   //
   // animation3
+  // 球面上の移動
   //
 
   pos.z += animationValue3 * radius;
-  theta = getRad(10.0, randomValues.x * 10.0);
+  theta = getRad(6.0, randomValues.x * 10.0);
   pos = rotateVec3(pos, animationValue3 * theta, vec3(0.0, 1.0, 0.0));
-  theta = getRad(10.0, randomValues.y * 10.0);
+  theta = getRad(6.0, randomValues.y * 10.0);
   pos = rotateVec3(pos, animationValue3 * theta, vec3(1.0, 0.0, 0.0));
-  theta = getRad(10.0, randomValues.z * 10.0);
+  theta = getRad(6.0, randomValues.z * 10.0);
   pos = rotateVec3(pos, animationValue3 * theta, vec3(0.0, 0.0, 1.0));
 
+  //
+  // フラグメントシェーダにに渡すUV座標を計算
+  //
 
-  vec4 modelViewPos = modelViewMatrix * vec4(pos, 1.0);
-  modelViewPos += vec4(position, 0.0) * animationValue1;
-
-  float d = distance(cameraPosition, pos);
-  gl_Position = projectionMatrix * modelViewPos;
-
-  // fragmentShaderに渡すcolorを計算
-  vColor = vec4(hsv2rgb(
-    vec3(
-      randomValues.x,
-      0.8,
-      0.8
-    )
-  ), getAlpha(d));
-
-  // fragmentShaderに渡すUV座標を計算
+  // テクスチャ上の何番目の文字を使うか
   float txtTextureIndex = mod(charIndex, textureTxtLength);
+
+  // テクスチャの横方向のグリッド単位
   float uUnit = 1.0 / numTextureGridCols;
+
+  // テクスチャの縦方向のグリッド単位
   float vUnit = 1.0 / numTextureGridRows;
+
+  // フラグメントシェーダに渡すUV座標を代入
   vUv = vec2(
     (uv.x + mod(txtTextureIndex, numTextureGridCols)) * uUnit,
     (uv.y + floor(txtTextureIndex / numTextureGridCols)) * vUnit
   );
+
+
+  //
+  // 最終的な座標とフラグメントシェーダに渡す文字色を計算
+  //
+
+  // モデル変換
+  vec4 modelPos = modelMatrix * vec4(pos, 1.0);
+
+  // ビュー変換
+  vec4 modelViewPos = viewMatrix * modelPos;
+
+  // ビルボードのための処理 (animation1)
+  modelViewPos += vec4(position, 0.0) * animationValue1;
+
+  // プロジェクション変換した座標をgl_Positionに代入
+  gl_Position = projectionMatrix * modelViewPos;
+
+  // カメラからの距離を算出
+  float d = distance(cameraPosition, modelPos.xyz);
+
+  // フラグメントシェーダに渡すcolorを計算
+  // 時間経過でHSVのHが徐々に変化
+  // 距離に応じてalphaの値が変化
+  vColor = vec4(hsv2rgb(
+    vec3(
+      (sin(getRad(2.0, randomValues.x * 2.0)) + 1.0) * 0.5,
+      0.8,
+      0.8
+    )
+  ), getAlpha(d));
 }
 
     </script>
     <script id="fragmentShader" type="x-shader/x-fragment">
 precision mediump float;
 
-uniform sampler2D txtTexture;
-varying vec4 vColor;
-varying vec2 vUv;
+uniform sampler2D txtTexture;  // テクスチャ
 
+varying vec4 vColor;  // 文字色
+varying vec2 vUv;     // UV座標
+
+// メインの処理
 void main(){
   vec4 color = texture2D(txtTexture, vUv) * vColor;
   if(color.a == 0.0) {
